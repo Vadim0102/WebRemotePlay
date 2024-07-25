@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>WebRemotePlay</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            background-color: #f0f0f0;
+        }
+        #controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            background-color: #ccc;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        #controls button {
+            margin: 5px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #buttonContainer {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background-color: #fff;
+            overflow: hidden;
+        }
+        .controlButton {
+            position: absolute;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 5px;
+            box-sizing: border-box;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            text-align: center;
+            line-height: 1.5;
+        }
+
+        .controlButton.active {
+            background-color: rgba(0, 0, 0, 0.4);
+        }
+
+        .hidden {
+            visibility: hidden;
+        }
+        .fullscreen-mode .hidden {
+            position: absolute;
+            top: -9999px;
+            left: -9999px;
+        }
+    </style>
+</head>
+<body>
+    <h1>
+        WRP
+        <span id="status">Disconnected</span><span id="ping">: -- ms</span>
+        <button id="copyButton">Server Code</button>
+        <button id="toggleElementsButton">Toggle Elements</button>
+    </h1>
+    <div id="controls">
+        <input type="text" id="serverAddress" placeholder="ws://localhost:8765">
+        <button id="connectButton">Connect</button>
+        <input type="text" id="presetName" placeholder="Preset Name">
+        <select id="presetList"></select>
+        <button id="savePresetButton">Save Preset</button>
+        <button id="loadPresetButton">Load Preset</button>
+        <button id="addButton">Add Button</button>
+        <button id="toggleDragButton">Enable Dragging</button>
+        <button id="toggleGridButton">Enable Grid</button>
+    </div>
+    <div id="buttonContainer"></div>
+
+    <script>
+        let socket;
+        let draggingEnabled = false;
+        let gridEnabled = false;
+        const statusElement = document.getElementById('status');
+        const buttonContainer = document.getElementById('buttonContainer');
+        const addButton = document.getElementById('addButton');
+        const connectButton = document.getElementById('connectButton');
+        const toggleDragButton = document.getElementById('toggleDragButton');
+        const toggleGridButton = document.getElementById('toggleGridButton');
+        const toggleElementsButton = document.getElementById('toggleElementsButton');
+        const serverAddressInput = document.getElementById('serverAddress');
+        const presetNameInput = document.getElementById('presetName');
+        const presetList = document.getElementById('presetList');
+        const savePresetButton = document.getElementById('savePresetButton');
+        const loadPresetButton = document.getElementById('loadPresetButton');
+        const pingElement = document.getElementById('ping');
+
+        const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${location.host}/ws`;
+        serverAddressInput.value = wsUrl;
+        connect();
+        startPing();
+
+        function getQueryParameter(name) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(name);
+        }
+
+        function connect() {
+            const wsUrl = serverAddressInput.value;
+            socket = new WebSocket(wsUrl);
+
+            socket.onopen = () => {
+                statusElement.innerText = 'Connected';
+            };
+
+            socket.onclose = () => {
+                statusElement.innerText = 'Disconnected. Reconnecting...';
+                setTimeout(connect, 1000);
+            };
+
+            socket.onerror = (error) => {
+                console.error('WebSocket Error:', error);
+                statusElement.innerText = 'Error. Reconnecting...';
+                socket.close();
+            };
+        }
+
+        function addButtonHandlers(button) {
+            button.addEventListener('mousedown', (event) => {
+                if (!draggingEnabled && socket.readyState === WebSocket.OPEN) {
+                    const key = button.getAttribute('data-key');
+                    const message = JSON.stringify([{ type: 'keyDown', key: key }]);
+                    socket.send(message);
+                    console.log('Sent:', message);
+                    button.classList.add('active');
+                }
+                if (draggingEnabled) {
+                    button.dataset.dragging = 'true';
+                    button.dataset.startX = event.clientX - button.getBoundingClientRect().left;
+                    button.dataset.startY = event.clientY - button.getBoundingClientRect().top / 2;
+                }
+            });
+
+            button.addEventListener('mouseup', () => {
+                if (!draggingEnabled && socket.readyState === WebSocket.OPEN) {
+                    const key = button.getAttribute('data-key');
+                    const message = JSON.stringify([{ type: 'keyUp', key: key }]);
+                    socket.send(message);
+                    console.log('Sent:', message);
+                    button.classList.remove('active');
+                }
+                button.dataset.dragging = 'false';
+            });
+
+            button.addEventListener('mouseleave', () => {
+                if (!draggingEnabled && socket.readyState === WebSocket.OPEN) {
+                    const key = button.getAttribute('data-key');
+                    const message = JSON.stringify([{ type: 'keyUp', key: key }]);
+                    socket.send(message);
+                    console.log('Sent:', message);
+                    button.classList.remove('active');
+                }
+                button.dataset.dragging = 'false';
+            });
+
+            button.addEventListener('mousemove', (event) => {
+                if (button.dataset.dragging === 'true') {
+                    const newX = event.clientX - parseInt(button.dataset.startX);
+                    const newY = event.clientY - parseInt(button.dataset.startY);
+                    button.style.left = `${newX}px`;
+                    button.style.top = `${newY}px`;
+                }
+            });
+
+            button.addEventListener('touchstart', (event) => {
+                if (!draggingEnabled && socket.readyState === WebSocket.OPEN) {
+                    const key = button.getAttribute('data-key');
+                    const message = JSON.stringify([{ type: 'keyDown', key: key }]);
+                    socket.send(message);
+                    console.log('Sent:', message);
+                    button.classList.add('active');
+                }
+                if (draggingEnabled) {
+                    const touch = event.touches[0];
+                    button.dataset.dragging = 'true';
+                    button.dataset.startX = touch.clientX - button.getBoundingClientRect().left;
+                    button.dataset.startY = touch.clientY - button.getBoundingClientRect().top;
+                }
+            });
+
+            button.addEventListener('touchend', () => {
+                if (!draggingEnabled && socket.readyState === WebSocket.OPEN) {
+                    const key = button.getAttribute('data-key');
+                    const message = JSON.stringify([{ type: 'keyUp', key: key }]);
+                    socket.send(message);
+                    console.log('Sent:', message);
+                    button.classList.remove('active');
+                }
+                button.dataset.dragging = 'false';
+            });
+
+            button.addEventListener('touchmove', (event) => {
+                if (button.dataset.dragging === 'true') {
+                    const touch = event.touches[0];
+                    const newX = touch.clientX - parseInt(button.dataset.startX);
+                    const newY = touch.clientY - parseInt(button.dataset.startY);
+                    button.style.left = `${newX}px`;
+                    button.style.top = `${newY}px`;
+                }
+            });
+        }
+
+        function keyToKeyCode(key) {
+            if (key.length === 1) {
+                return key.toUpperCase().charCodeAt(0);
+            }
+            return parseInt(key);
+        }
+
+        function keyCodeToKey(keyCode) {
+            return String.fromCharCode(keyCode);
+        }
+
+        addButton.addEventListener('click', () => {
+            const input = prompt('Enter key code or character for new button:', '');
+            const keyCode = keyToKeyCode(input);
+            const key = keyCodeToKey(keyCode);
+            const width = prompt('Enter button width (in pixels):', '100');
+            const height = prompt('Enter button height (in pixels):', '50');
+            const newButton = document.createElement('button');
+            newButton.className = 'controlButton';
+            newButton.setAttribute('data-key', keyCode);
+            newButton.innerText = key;
+            newButton.style.width = `${width}px`;
+            newButton.style.height = `${height}px`;
+            buttonContainer.appendChild(newButton);
+            addButtonHandlers(newButton);
+        });
+
+        toggleDragButton.addEventListener('click', () => {
+            draggingEnabled = !draggingEnabled;
+            toggleDragButton.innerText = draggingEnabled ? 'Disable Dragging' : 'Enable Dragging';
+            document.querySelectorAll('.controlButton').forEach(button => {
+                button.draggable = draggingEnabled;
+            });
+        });
+
+        toggleGridButton.addEventListener('click', () => {
+            gridEnabled = !gridEnabled;
+            toggleGridButton.innerText = gridEnabled ? 'Disable Grid' : 'Enable Grid';
+            buttonContainer.classList.toggle('grid', gridEnabled);
+        });
+
+        toggleElementsButton.addEventListener('click', () => {
+            const controls = document.getElementById('controls');
+
+            if (document.fullscreenElement) {
+                document.exitFullscreen().then(() => {
+                    controls.classList.remove('hidden');
+                    document.body.classList.remove('fullscreen-mode');
+                }).catch(err => {
+                    alert('Failed to exit fullscreen mode.');
+                });
+            } else {
+                document.documentElement.requestFullscreen().then(() => {
+                    controls.classList.add('hidden');
+                    document.body.classList.add('fullscreen-mode');
+                }).catch(err => {
+                    alert('Failed to enter fullscreen mode.');
+                });
+            }
+        });
+
+        connectButton.addEventListener('click', () => {
+            if (socket) {
+                socket.close();
+            }
+            connect();
+        });
+
+        savePresetButton.addEventListener('click', async () => {
+            const presetName = presetNameInput.value;
+            if (!presetName) {
+                alert('Please enter a preset name.');
+                return;
+            }
+
+            const buttons = [...document.querySelectorAll('.controlButton')].map(button => ({
+                key: button.getAttribute('data-key'),
+                text: button.innerText,
+                style: {
+                    left: button.style.left || '0px',
+                    top: button.style.top || '0px',
+                    width: button.style.width || '100px',
+                    height: button.style.height || '50px'
+                }
+            }));
+
+            const response = await fetch(`/presets/${presetName}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(buttons)
+            });
+
+            if (response.ok) {
+                alert('Preset saved successfully.');
+                loadPresetList();
+            } else {
+                alert('Failed to save preset.');
+            }
+        });
+
+        loadPresetButton.addEventListener('click', async () => {
+            const presetName = presetList.value;
+            if (!presetName) {
+                alert('Please select a preset.');
+                return;
+            }
+
+            const response = await fetch(`/presets/${presetName}`);
+            if (response.ok) {
+                const buttons = await response.json();
+                buttonContainer.innerHTML = '';
+                buttons.forEach(buttonData => {
+                    const newButton = document.createElement('button');
+                    newButton.className = 'controlButton';
+                    newButton.setAttribute('data-key', buttonData.key);
+                    newButton.innerText = buttonData.text;
+
+                    newButton.style.left = (buttonData.style && buttonData.style.left) || '0px';
+                    newButton.style.top = (buttonData.style && buttonData.style.top) || '0px';
+                    newButton.style.width = (buttonData.style && buttonData.style.width) || '100px';
+                    newButton.style.height = (buttonData.style && buttonData.style.height) || '50px';
+
+                    buttonContainer.appendChild(newButton);
+                    addButtonHandlers(newButton);
+                });
+            } else {
+                alert('Failed to load preset.');
+            }
+        });
+
+        async function loadPresetList() {
+            const response = await fetch('/presets');
+            if (response.ok) {
+                const presets = await response.json();
+                presetList.innerHTML = '';
+                presets.forEach(preset => {
+                    const option = document.createElement('option');
+                    option.value = preset;
+                    option.text = preset;
+                    presetList.appendChild(option);
+                });
+            } else {
+                alert('Failed to load preset list.');
+            }
+        }
+
+        loadPresetList();
+
+        document.querySelectorAll('.controlButton').forEach(button => addButtonHandlers(button));
+
+        const serverAddressFromUrl = getQueryParameter('server');
+        if (serverAddressFromUrl) {
+            serverAddressInput.value = `ws://${serverAddressFromUrl}`;
+            connect();
+        }
+
+        document.getElementById('copyButton').addEventListener('click', () => {
+            const codeString = "fetch('http://localhost:8080/code.js').then(response => response.text()).then(eval);";
+
+            const textArea = document.createElement('textarea');
+            textArea.value = codeString;
+            document.body.appendChild(textArea);
+
+            textArea.select();
+            document.execCommand('copy');
+
+            document.body.removeChild(textArea);
+
+            alert('Code copied! Paste this to console with WebGame');
+        });
+
+        function startPing() {
+            setInterval(() => {
+                const start = Date.now();
+                fetch('/ping')
+                    .then(() => {
+                        const ping = Date.now() - start;
+                        pingElement.innerText = `: ${ping} ms`;
+                    })
+                    .catch(() => {
+                        pingElement.innerText = ': -- ms';
+                    });
+            }, 1000);
+        }
+    </script>
+</body>
+</html>

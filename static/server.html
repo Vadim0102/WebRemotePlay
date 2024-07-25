@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Server Code</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+            margin: 0;
+        }
+        #codeContainer {
+            width: 80%;
+            background-color: #fff;
+            padding: 20px;
+            border: 1px solid #ccc;
+            margin-bottom: 20px;
+        }
+        #copyButton {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Server Code</h1>
+    <pre id="codeContainer">
+let socket;
+let reconnectInterval = 1000;
+
+function connect() {
+    socket = new WebSocket('ws://localhost:8080/ws');
+
+    socket.onopen = function(event) {
+        console.log('WebSocket connection established');
+        reconnectInterval = 1000;
+    };
+
+    socket.onmessage = function(event) {
+        const messages = JSON.parse(event.data);
+        if (Array.isArray(messages)) {
+            messages.forEach(message => {
+                if (message.type === 'keyPress') {
+                    simulateKeyPress(message.key);
+                }
+                if (message.type === 'keyDown') {
+                    simulateKeyDown(message.key);
+                }
+                if (message.type === 'keyUp') {
+                    simulateKeyUp(message.key);
+                }
+            });
+        }
+        console.log('Message from server:', event.data);
+    };
+
+    socket.onerror = function(event) {
+        console.error('WebSocket error:', event);
+    };
+
+    socket.onclose = function(event) {
+        console.log('WebSocket connection closed. Attempting to reconnect...');
+        setTimeout(connect, reconnectInterval);
+        reconnectInterval = Math.min(reconnectInterval * 2, 30000);
+    };
+}
+
+function simulateKeyEvent(type, key) {
+    key = Number(key);
+    const event = new KeyboardEvent(type, {
+        key: key,
+        code: key,
+        keyCode: key,
+        which: key,
+        bubbles: true,
+        cancelable: true
+    });
+    document.dispatchEvent(event);
+}
+
+function simulateKeyPress(key) {
+    simulateKeyEvent('keydown', key);
+    simulateKeyEvent('keypress', key);
+    simulateKeyEvent('keyup', key);
+}
+
+function simulateKeyDown(key) {
+    simulateKeyEvent('keydown', key);
+}
+
+function simulateKeyUp(key) {
+    simulateKeyEvent('keyup', key);
+}
+
+connect();
+    </pre>
+    <button id="copyButton">Copy Code</button>
+
+    <script>
+        document.getElementById('copyButton').addEventListener('click', () => {
+            const codeContainer = document.getElementById('codeContainer');
+            const range = document.createRange();
+            range.selectNode(codeContainer);
+            window.getSelection().removeAllRanges();
+            window.getSelection().addRange(range);
+            try {
+                document.execCommand('copy');
+                alert('Code copied to clipboard!');
+            } catch (err) {
+                alert('Failed to copy code');
+            }
+            window.getSelection().removeAllRanges();
+        });
+    </script>
+</body>
+</html>
