@@ -1,8 +1,7 @@
 # WebRemotePlay
 Play PC browser games from your phone as a controller!
 
-Demonstration video:
-*Video in progress.*
+[Demonstration and guide video](https://youtu.be/oGu6l0rlW6I)
 
 # How to run?
 ## Windows
